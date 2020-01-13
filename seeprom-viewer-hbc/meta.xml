@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1.1">
+	<name>SEEPROM Viewer</name>
+	<version>0.7</version>
+        <release_date>20191015</release_date>
+	<coder>Vega, Team Twiizers</coder>
+	<short_description>SEEPROM Viewer</short_description>
+	<long_description>This app will display the contents of your SEEPROM.</long_description>
+	<ahb_access/>
+</app>
