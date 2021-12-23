@@ -2,9 +2,13 @@
 
 by VegaASM
 
-Seeprom Viewer is a Homebrew Channel Application that displays the contents of your Seeprom onto the screen. The display will be shown in a Hex-Editor like fashion. Press the Home Button on your Wii Remote to exit back to HBC at any time. The app is made via Inline ASM. The part of the source (within /build/main.s) for reading from the SEEPROM was originally made by Team Twiizers in C. I rewrote/optimized it in full ASM.
+Credits to Team Twiizers (original seeprom_read code)
+
+Seeprom Viewer is a Homebrew Channel Application that displays the contents of your Seeprom onto the screen. The display will be shown in a Hex-Editor like fashion. Press the Home/Start Button on your controller to exit back to HBC at any time. The app is made via Inline ASM. The part of the source (within /build/main.s) for reading from the SEEPROM was originally made by Team Twiizers in C. I rewrote/optimized it in full ASM.
 
 Copy of the original C code plus the GPLv2 License are contained in the orgcodelicense.zip file.
+
+For a regular binary download of the HBC app, go to the Releases tab/section. If you instead want to compile from source, keep reading.
 
 How to Compile & Run:
 
@@ -16,13 +20,15 @@ Compilation example (Linux):
 
 1: cd /path/to/your/binutils
 
-2: ./powerpc-eabi-as -mregnames -m750cl /path/to/Seeprom-Viewer/build/main.s -o /path/to/Seeprom-Viewer/build/main.o
+2: ./powerpc-eabi-as -mregnames -mbroadway /path/to/Seeprom-Viewer/build/main.s -o /path/to/Seeprom-Viewer/build/main.o
 
 3: cd /path/to/Seeprom-Viewer
 
 4: make
 
 Change Log / History
+
+v0.8 Dec 22, 2021 - HBC app now available for binary release download in the Releases tab/section of the GitHub repo. Added GCN controller support. Added some font colors to certain text. Properly allocated memory for contents that are being displayed. Added error checks for memalign and sprintf. Updated makefile with '-0s' tag. No more custom 'Hex to ASCII' subroutine for prepping all seeprom content for the printf. A sprintf loop is now used. Once again optimized seeprom source.
 
 v0.7 Oct 15, 2019 - Optimized both seeprom and overall main.s source code.
 
