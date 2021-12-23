@@ -10,7 +10,7 @@ static GXRModeObj *rmode = NULL;
 int main(int argc, char **argv) {
 //---------------------------------------------------------------------------------
 
-	// Initialize the video system
+	// Initialise the video system
 	VIDEO_Init();
 
 	// This function initialises the attached controllers
@@ -48,6 +48,9 @@ int main(int argc, char **argv) {
 	// we can use variables for this with format codes too
 	// e.g. printf ("\x1b[%d;%dH", row, column );
 	printf("\x1b[2;0H");
+
+
+	printf("Hello World!");
 
 	while(1) {
 
