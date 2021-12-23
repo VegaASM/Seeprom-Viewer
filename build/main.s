@@ -1,466 +1,395 @@
-
 	.file	"main.c"
+	.machine ppc
 	.section	".text"
-	.lcomm	xfb,4,4
-	.type	xfb, @object
-	.lcomm	rmode,4,4
-	.type	rmode, @object
 	.globl __eabi
-	.section	.rodata
-	.align 2
+	.section	.rodata.str1.1,"aMS",@progbits,1
 .LC0:
 	.string	"\033[2;0H"
-	.section	".text"
+.LC2:
+    .string "\x1b[2J" #For resetting the console
+.LC3:
+    .string "\n\nExiting to HBC..."
+.LC4:
+    .string "%02X %02X %02X %02X " #See the space at end
+.LC5:
+    .string "%02X %02X %02X %02X\n" #For going into new row
+.LC6:
+    .string "\n\n\x1b[31mMemalign Error. Auto-exiting to HBC. Please wait..."
+.LC7:
+    .string "\n\n\x1b[31mSprintf Error. Auto-exiting to HBC. Please wait..."
+.LC1:
+	.string	"\n\nSEEPROM Viewer (v0.8) by \x1b[45m\x1b[30mVega\x1b[40m\x1b[37m. Build Date: Dec 22, 2021\n\nOriginal seeprom_read code by Team Twiizers.\n\nPress Home/Start button to return back to \x1b[36mHBC\x1b[37m.\n\n"
+	.section	.text.startup,"ax",@progbits
 	.align 2
 	.globl main
 	.type	main, @function
 main:
 .LFB64:
 	.cfi_startproc
-	stwu 1,-40(1)
-	.cfi_def_cfa_offset 40
+	stwu 1,-16(1)
+	.cfi_def_cfa_offset 16
 	mflr 0
-	stw 0,44(1)
-	stw 31,36(1)
+	stw 0,20(1)
+	stmw 30,8(1)
 	.cfi_offset 65, 4
+	.cfi_offset 30, -8
 	.cfi_offset 31, -4
-	mr 31,1
-	.cfi_def_cfa_register 31
-	stw 3,24(31)
-	stw 4,28(31)
 	bl __eabi
 	bl VIDEO_Init
+	lis 31,.LANCHOR0@ha
 	bl WPAD_Init
+	bl PAD_Init #Added in Manually for GC Controller support
 	li 3,0
 	bl VIDEO_GetPreferredMode
-	mr 10,3
-	lis 9,rmode@ha
-	stw 10,rmode@l(9)
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
-	mr 3,9
+	la 30,.LANCHOR0@l(31)
+	stw 3,.LANCHOR0@l(31)
 	bl SYS_AllocateFramebuffer
-	mr 9,3
-	addis 9,9,0x4000
-	mr 10,9
-	lis 9,xfb@ha
-	stw 10,xfb@l(9)
-	lis 9,xfb@ha
-	lwz 10,xfb@l(9)
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
-	lhz 9,4(9)
-	mr 6,9
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
-	lhz 9,8(9)
-	mr 7,9
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
-	lhz 9,4(9)
-	slwi 9,9,1
-	mr 8,9
+	lwz 9,.LANCHOR0@l(31)
 	li 5,20
 	li 4,20
-	mr 3,10
+	addis 3,3,0x4000
+	lhz 6,4(9)
+	lhz 7,8(9)
+	slwi 8,6,1
+	stw 3,4(30)
 	bl CON_Init
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
-	mr 3,9
+	lwz 3,.LANCHOR0@l(31)
 	bl VIDEO_Configure
-	lis 9,xfb@ha
-	lwz 9,xfb@l(9)
-	mr 3,9
+	lwz 3,4(30)
 	bl VIDEO_SetNextFramebuffer
 	li 3,0
 	bl VIDEO_SetBlack
 	bl VIDEO_Flush
 	bl VIDEO_WaitVSync
-	lis 9,rmode@ha
-	lwz 9,rmode@l(9)
+	lwz 9,.LANCHOR0@l(31)
 	lwz 9,0(9)
-	rlwinm 9,9,0,31,31
-	cmpwi 7,9,0
-	beq 7,.L2
+	andi. 9,9,0x1
+	beq+ 0,.L2
 	bl VIDEO_WaitVSync
 .L2:
-	lis 9,.LC0@ha
-	la 3,.LC0@l(9)
+	lis 3,.LC0@ha #Clear the Console
+	la 3,.LC0@l(3)
 	crxor 6,6,6
 	bl printf
 	
-	#~~~~~~~~~~~~~~~~~~~#
-	# Custom Inline ASM #
-	#~~~~~~~~~~~~~~~~~~~#
-
-	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
-	# Setup Args for SEEPROM READ #
-	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+	lis 3,.LC2@ha #Reset the Console
+	la 3,.LC2@l(3)
+	crxor 6,6,6
+	bl printf
 	
-	lis r3, 0x8166
-	li r4, 0
-	li r5, 0x80
+	#SEEPROM args for seeprom_read
+    lis r3, 0x8000
+    ori r3, r3, 0x1400
+    li r4, 0
+    li r5, 0x80
 	
-#~~~~~~~~~~~~~~#
-# SEEPROM READ #
-#~~~~~~~~~~~~~~#
-
-#~~~~~~~~~~~~~~~~#
-# Register Notes #
-#~~~~~~~~~~~~~~~~#
-
-#r12 = LR
+#r0 = scrap
+#r3 = Arg 1
+#r4 = Arg 2
+#r5 = Arg 3
+#r6 = another LR backup
+#r7 = Unused
+#r8 = current bit to send to SEEPROM
+#r9 = 1st arg of send_bits
+#r10 = Loop Tracker of send_bits
 #r11 = GPIO
-#r10 = send bits arg 2, also part of rec bits
-#r9 = send bits arg 1, also part of rec bits
-#r8 = temp reg for send bits
-#r7 = wait loop
-#r6 = temp reg to check args, LR for clock/unclock subroutine
+#r12 = Unused
 
-#~~~~~~#
-# Args #
-#~~~~~~#
+#GPIO_OUT
+#Bit 19 = DI
+#Bit 20 = SK
+#Bit 21 = CS
 
+#GPIO_IN
+#Bit 18 = DO
+
+#Args
 #r3 = Address to Dump Seeprom Contents To
-#r4 = Offset of Seeprom for 1st 16 bit word to read then dump
-#r5 = Amount of 16 bit words to dump.
+#r4 = Seeprom Offset start
+#r5 = Amount of 16-bit reads to read starting at r4
 
-#~~~~~~~~~~~~~~~~~~#
-# Set GPIO Address #
-#~~~~~~~~~~~~~~~~~~#
-
+#Set GPIO Upper 16 bits
 lis r11, 0xCD80
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~#
-# Unclock, Clear CS, Wait #
-#~~~~~~~~~~~~~~~~~~~~~~~~~#
-
+#Unclock and Clear CS
 lwz r0, 0x00E0 (r11)
 sync
-rlwinm r0, r0, 0, 22, 19
+rlwinm r0, r0, 0, 22, 19 #Clear CS and SK
 stw r0, 0x00E0 (r11)
 eieio
-
 bl wait
 
-#~~~~~~#
-# LOOP #
-#~~~~~~#
-
+#Main Loop (for multiple reads if done)
 seeprom_read_loop:
 
-#~~~~~~#
-# READ #
-#~~~~~~#
-
-#SB = 1
-#OpCode = 10
-#Address x16 = XXXXXXXX (Seeprom Offset 0x00 thru 0x7F)
-
-ori r9, r4, 0x600
-
-#~~~~~~~~~~~~~~~~~~~~~#
-# Turn on Chip Select #
-#~~~~~~~~~~~~~~~~~~~~~#
-
+#Turn on Chip Select
 lwz r0, 0x00E0 (r11)
 sync
-ori r0, r0, 0x400
+ori r0, r0, 0x0400 #CS high
 stw r0, 0x00E0 (r11)
 eieio
-
-#No waiting, need rising edge
-
-#~~~~~~~~~~~~~~~~~~~~~~#
-# Send Bits to Seeprom #
-#~~~~~~~~~~~~~~~~~~~~~~#
-
-#~~~~~~~~~~~~~~~~~~#
-# Bit Sending Loop #
-#~~~~~~~~~~~~~~~~~~#
-
-li r10, 10 #Instruction length minus 1
-
-bit_loop:
-srw r8, r9, r10 #Starting at Most Sig. Bit, each bit will have a spot in bit 31 to send in via DI of GPIO_OUT
-clrlwi. r8, r8, 31 #SB bit, then OP Code bit, then OP Code bit, then Address/Don't-Care bit, etc etc
-
-lwz r0, 0x00E0 (r11) #Load GPIO before taking branch routes
-sync
-
-bne- send_bit_to_seeprom
-rlwinm r0, r0, 0, 20, 18 #Clear DI (Data to Seeprom) bit
-
-b clock_unclock_then_decrement_loop
-
-send_bit_to_seeprom:
-ori r0, r0, 0x1000 #TURN ON DI (Data to Seeprom) bit
-
-clock_unclock_then_decrement_loop:
-stw r0, 0x00E0 (r11)
-eieio
-
 bl wait
 
-bl clock_unclock
+###READ###
+#SB = 1
+#OpCode = 10
+#Address x16 = XXXXXXXX (SEEPROM offset, 0x00 thru 0x7F)
+ori r9, r4, 0x600
 
-subic. r10, r10, 1
-bge+ bit_loop
+#Send bits to SEEPROM
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
-# Command + Address Sent, Retrieve Data #
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+#Setup Loop amount
+li r10, 10 #Instruction length minus 1
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~#
-# Receive Bits from Seeprom #
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+send_bit_loop:
+srw r8, r9, r10 #Make current bit being sent be placed on bit 31 slot
 
-li r9, 0
-li r10, 16 #16 for 16 bit atmel word
-
-#~~~~~~~~~~~~~~~~~~~~#
-# Bit Recieving Loop #
-#~~~~~~~~~~~~~~~~~~~~#
-
-retrieve_bit:
-slwi r9, r9, 1
-
-bl clock_unclock
-
-lwz r0, 0x00E8 (r11) #Load GPIO_IN!!!
+#Load GPIO
+lwz r0, 0x00E0 (r11)
 sync
-rlwinm r0, r0, 19, 31, 31 #Rotate GPIO_IN Bit to Bit 31
 
-#~~~~~~~~~~~~#
-# Build Bits #
-#~~~~~~~~~~~~#
+#Replace bit 19 of loaded GPIO with bit 31 of r8
+rlwimi r0, r8, 12, 19, 19 #Hex mask of 0x00001000
 
-or r9, r9, r0
+#Send the bit!
+stw r0, 0x00E0 (r11)
+eieio
+bl wait
+
+#Clock and Unclock
+bl clock_unclock
+
 subic. r10, r10, 1
-bne+ retrieve_bit #Once Halfword is built, stop looping.
+bge+ send_bit_loop
 
-#~~~~~~~~~~~~~~~~~~~~~~#
-# Store Retrieved Data #
-#~~~~~~~~~~~~~~~~~~~~~~#
+#Current READ command & address sent, now retrieve the data
+li r10, 0
+li r0, 16 #16 for 16 bits in a atmel word
+mtctr r0
 
-sth r9, 0 (r3)
+#Bit receiving loop
+retrieve_bit_loop:
+slwi r10, r10, 1
 
-#~~~~~~~~~~~~~#
-# Turn Off CS #
-#~~~~~~~~~~~~~#
+bl clock_unclock
 
+lwz r0, 0x00E8 (r11) #GPIO_IN!!!!!!!!!!!
+sync
+rlwinm r0, r0, 19, 31, 31 #Place bit into bit 31 slot, clear all other bits
+
+#Compile Bits to 16-bit Hex atmel word; decrement loop
+or r10, r10, r0
+bdnz+ retrieve_bit_loop
+
+#Store finished Data
+sth r10, 0 (r3)
+
+#Turn Chip Select Low, need to do this if we wanna issue another Read Command
 lwz r0, 0x00E0 (r11)
 sync
 rlwinm r0, r0, 0, 22, 20
 stw r0, 0x00E0 (r11)
 eieio
-
 bl wait
 
-#~~~~~~~~~~~~~~~~~~#
-# Loop Decrementer #
-#~~~~~~~~~~~~~~~~~~#
-
+#Main Loop Decrementer
 subic. r5, r5, 1
-addi r3, r3, 2 #Increment Address by 2 (atmel words are 16 bits ofc)
-addi r4, r4, 1 #Increment Seeprom Offset by 1
+addi r3, r3, 2 #Increment to next place to store newly read Atmel word
+addi r4, r4, 1 #Increment to next SEEPROM offset
 bne+ seeprom_read_loop
 
-#~~~~~~~~~~~~~~~~~~#
-# END Seeprom READ #
-#~~~~~~~~~~~~~~~~~~#
+#Everything is done, CS and SK already low, and a wait was already done
+b allocate_memory
 
-b hex_dump_conv
-
-# This is a universal 'sleep'/'wait' subroutine needed to be executed when certain interactions are
-# preformed to the SEEPROM. The amount of time to wait varies. However, it's easier to
-# make-shift one universal sleep/wait routine. That is long enough to cover any type
-# of interaction. Keep in mind, that the wait routine can't be way way too long or else
-# you could exceed the Max Time Write Cycle (if you are writing to the Seeprom) which
-# is 10 milli-seconds (a very long time lol)
-# 
-# Other devs in the past (in C) have used a time delay of 5 micro-seconds. 5 microseconds is a bit overkill.  
-# The Bus has a speed of 60.75 ticks/nops per micro-second. We don't know which
-# voltage version of the Seeprom the wii uses. So assuming the low-V/slowest model, we need atleast 
-# 1 microsecond for clocking on/off, plus another 400 nano-seconds on top for DI Setup & 
-# CS Setup time. 1400 nanoseconds. Bump it up to 2000 to be safe (2 microseconds)
-# Instead of using 121.5 nops, we will use a loop. Most integer instructions in Broadway take
-# just one cycle to complete. If not, they will take longer than one cycle. Let's assume
-# every integer instructions takes one cycle to complete.
-#
-# In conclusion we need an execution of 122 integer/nop instructions for 2 microseconds to pass by
-
-wait:
-li r7, 61
-
-wait_loop:
-nop
-subic. r7, r7, 1
-bne+ wait_loop
-
-blr
-
-#~~~~~~~~~~~~~~~~~~~~~~~~~~#
-# Clock Unclock Subroutine #
-#~~~~~~~~~~~~~~~~~~~~~~~~~~#
-
+#Clock and unclock subroutine
 clock_unclock:
 mflr r6
 
 lwz r0, 0x00E0 (r11)
 sync
-ori r0, r0, 0x800 #Clock the Seeprom
+ori r0, r0, 0x0800 #SK; bit 20 high
 stw r0, 0x00E0 (r11)
 eieio
-
 bl wait
-
 lwz r0, 0x00E0 (r11)
 sync
-rlwinm r0, r0, 0, 21, 19 #Unclock Seeprom
+rlwinm r0, r0, 0, 21, 19 #Sk; bit 20 low
 stw r0, 0x00E0 (r11)
 eieio
-
 bl wait
 
 mtlr r6
 blr
 
-	#~~~~~~~~~~~~~~~~~~~~#
-	# Hex Dump Converter #
-	#~~~~~~~~~~~~~~~~~~~~#
+#Wait subroutine
+wait:
+li r0, 0 #Reset Starlet Timer
+stw r0, 0x0010 (r11)
 
-	#Converts Large Dumps of Hex to ASCII
+wait_loop:
+lwz r0, 0x0010 (r11)
+cmplwi r0, 2 #Check if 2 'tick's (~1000 nanoseconds) has elapsed
+blt- wait_loop
+
+blr
 	
-	#r3 = Memory Location for Dump is
-	#r4 = Memory Location where converted contents go
-	#r5 = Amount of Bytes to convert
+	#Allocate some memory for sprintf shit
+	allocate_memory:
+	li r3, 32 #32 bit alignment, why not
+	li r4, 0x2000 #Should be more than enough
+	bl memalign
+	cmpwi r3, 0
+	beq- err_memalign
 	
-	hex_dump_conv:
-
-lis r3, 0x8165
-ori r3, r3, 0xFFFF #-1 from 0x81660000
-lis r4, 0x8166
-ori r4, r4, 0xFFFE #-2 from 0x81670000
-
-li r5, 0x100
-
-li r9, 0
-
-mega_loop:
-lbzu r6, 0x1 (r3)
-
-srwi r7, r6, 4
-clrlwi r8, r6, 28
-
-cmplwi r7, 0xA
-blt- addthirty
-
-addi r7, r7, 0x37
-b done_one
-
-addthirty:
-addi r7, r7, 0x30
-
-done_one:
-slwi r7, r7, 8
-
-cmplwi r8, 0xA
-blt- addthirty_again
-
-addi r8, r8, 0x37
-b done_two
-
-addthirty_again:
-addi r8, r8, 0x30
-
-done_two:
-or r7, r7, r8
-
-sthu r7, 0x2 (r4)
-
-addi r9, r9, 1
-
-cmpwi r9, 16
-blt+ new_row
-
-li r9, 0
-li r6, 0x0A
-b store_halfword
-
-new_row:
-li r6, 0x20
-
-store_halfword:
-stbu r6, 0x2 (r4)
-addi r4, r4, -1
-
-subic. r5, r5, 1
-bne+ mega_loop
-
-stb r9, 0x2 (r4) #r9 will be 0 at this point. Append Null at end (after final 0x0A) so printf won't continue forever and forever...
+	#Inline ASM stack pop for one register
+	stwu sp, -0x0020 (sp)
+	stmw r28, 0x8 (sp)
 	
-	#~~~~~~~~~~~~~#
-	# Setup Title #
-	#~~~~~~~~~~~~~#
+	#Backup memalign pointer
+	mr r31, r3
 	
-	bl make_title
+	#Set r30 (seeprom raw contents pointer - 1)
+	lis r30, 0x8000
+	ori r30, r30, 0x13FF #For loading sprintf args
 	
-	#String for the title above the SEEPROM contents
+	#Copy r31 to r28; used for cursor updating after every sprintf
+	mr r28, r31
 	
-	.string "SEEPROM Viewer (v0.7) by Vega.\n\nOriginal seeprom_read code by Team Twiizers.\n\nPress the Home button to return back to HBC.\n\n"
-    .align 2
-    
-    make_title:
-    mflr r12
-    addi r12, r12, -4 #Buffer of 0x4 due to lwzu 0x4 offset
-    
-    lis r3, 0x8166 #Setup printf arg
-    ori r3, r3, 0xFF84
-    
-    addi r4, r3, -4 #Buffer of 0x4 due to stwu 0x4 offset
-    
-    li r6, 31 #31 words (excluding null word created by align 2)
-    
-    title_loop:
-    lwzu r5, 0x4 (r12)
-    stwu r5, 0x4 (r4)
-    subic. r6, r6, 1
-    bne+ title_loop
-    
-	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
-	# Display the Contents onto the Console #
-	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
-
-	crxor 6, 6, 6 #r3 set from earlier
+	#Sprintf program title, basically transfer the string from rodata to memalign block
+	#r3 already set
+	lis r4, .LC1@ha
+	la r4, .LC1@l (r4)
+	crxor 6,6,6
+	bl sprintf
+	cmpwi r3, 0
+	blt- err_sprintf
+	
+	#Increment r28 based on r3 amount to keep updating the cursor spot for next sprintf call
+	add r28, r28, r3
+	
+	#Loop to sprintf all the rows
+	#Loop iterations 4,8,12, etc etc do the enter in row, not space
+	#Set loop tracker byte; 64 is max
+	li r29, 0
+	
+	#Loop
+	sprintf_loop:
+	addi r29, r29, 1
+	cmpwi r29, 65 #Once 65 is hit, 64 32-bit words have been done
+	beq- setup_the_printf
+	
+	#Check for loop iteration 4,8,12,16 etc etc
+	clrlwi. r0, r29, 30 #Clear everything but final two right side bits
+	bne+ do_spacer_line
+	
+	#Do enter down line
+	lis r4, .LC5@ha
+	la r4, .LC5@l (r4)
+	b call_sprintf
+	
+	#Spacer line instead
+	do_spacer_line:
+	lis r4, .LC4@ha
+	la r4, .LC4@l (r4)
+	
+	#Sprintf it!
+	call_sprintf:
+	mr r3, r28
+	lbzu r5, 0x1 (r30) #Do lwzu's to always keep r30 updated
+	lbzu r6, 0x1 (r30)
+	lbzu r7, 0x1 (r30)
+	lbzu r8, 0x1 (r30)
+	crxor 6,6,6
+	bl sprintf
+	cmpwi r3, 0
+	blt- err_sprintf
+	
+	#Update r28 based on r3 amount to keep updating the cursor spot for next sprintf call
+	add r28, r28, r3
+	
+	#Now Loop Back
+	b sprintf_loop
+	
+	#Setup printf's only GPR arg
+	setup_the_printf:
+	mr r3, r31
+	
+	#Pop the Inline stack; don't need it anymore
+	lmw r28, 0x8 (sp)
+	addi sp, sp, 0x0020
+	
+	#Everything has been 'sprintf'd', now print that bitch!
+	crxor 6,6,6
 	bl printf
 	
+	#Check if Home/Start was pressed. If so, exit HBC.
 .L4:
 	bl WPAD_ScanPads
-	li 3,0
+	li r3, 0
 	bl WPAD_ButtonsDown
-	stw 3,8(31)
-	lwz 9,8(31)
-	rlwinm 9,9,0,24,24
-	cmpwi 7,9,0
-	beq 7,.L3
+	andi. r3, r3, 0x0080 #Bit 24 for HOME on any Wii Remote Based Controller
+	bne- exit_to_hbc
+	bl PAD_ScanPads
+	li r3, 0
+	bl PAD_ButtonsDown
+	andi. r3, r3, 0x1000 #Bit 19 for Start on GCN
+	beq+ .L3
 	
-	#Make quick exiting note on console once Home button is pressed
-	bl VIDEO_WaitVSync
-	bl exiting_title
-	.string "Exiting to HBC..."
-	.align 2
-	exiting_title:
-	mflr r3
-	crxor 6, 6, 6
+	#Exit to HBC
+	exit_to_hbc:
+	lis 3,.LC2@ha #Reset the Console
+	la 3,.LC2@l(3)
+	crxor 6,6,6
 	bl printf
-	
-	li 3,0
+	lis 3,.LC3@ha #Exiting to HBC...
+	la 3,.LC3@l(3)
+	crxor 6,6,6
+	bl printf
+	li r3, 0
 	bl exit
+	b .L3
+	
+	#Memalign error
+	err_memalign:
+	lis 3,.LC2@ha #Reset the Console
+	la 3,.LC2@l(3)
+	crxor 6,6,6
+	bl printf
+	lis 3,.LC6@ha
+	la 3,.LC6@l(3)
+	crxor 6,6,6
+	bl printf
+	b .L4
+	
+	#sprintf error; first pop the stack
+	err_sprintf:
+	lmw r28, 0x8 (sp)
+	addi sp, sp, 0x0020
+	lis 3,.LC2@ha #Reset the Console
+	la 3,.LC2@l(3)
+	crxor 6,6,6
+	bl printf
+	lis 3,.LC7@ha
+	la 3,.LC7@l(3)
+	crxor 6,6,6
+	bl printf
+	b .L4
+	
 .L3:
 	bl VIDEO_WaitVSync
 	b .L4
 	.cfi_endproc
 .LFE64:
 	.size	main, .-main
-	.ident	"GCC: (devkitPPC release 35) 8.3.0"
+	.section	".bss"
+	.align 2
+	.set	.LANCHOR0,. + 0
+	.type	rmode, @object
+	.size	rmode, 4
+rmode:
+	.zero	4
+	.type	xfb, @object
+	.size	xfb, 4
+xfb:
+	.zero	4
+	.ident	"GCC: (devkitPPC release 39) 11.1.0"
